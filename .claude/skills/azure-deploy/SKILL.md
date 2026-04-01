@@ -1,7 +1,7 @@
 ---
 name: azure-deploy
 description: Analyze, prepare, and deploy a web application to Azure Web App. Detects framework, fixes compatibility issues, configures Azure resources, and deploys end-to-end. Use when deploying any web app to Azure.
-argument-hint: "[app-name] [resource-group] [region] [sku]"
+argument-hint: "[app-name] [resource-group]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
@@ -10,8 +10,6 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 Deploy the web application to Azure Web App following these steps in order. Arguments (all optional — you will derive sensible defaults if not provided):
 - `$0`: App name (default: derived from project directory name)
 - `$1`: Resource group name (default: `<app-name>-rg`)
-- `$2`: Azure region (default: `eastus`)
-- `$3`: App Service Plan SKU (default: `B1`)
 
 ---
 
@@ -29,8 +27,6 @@ Run `az account show` to verify the user is logged in.
 Determine the following values — prefer explicit `$ARGUMENTS`, fall back to the defaults described above:
 - `APP_NAME`
 - `RESOURCE_GROUP`
-- `REGION`
-- `SKU`
 
 Sanitize `APP_NAME`: lowercase, hyphens only, max 60 chars (Azure naming rules). Tell the user the resolved values before proceeding.
 
@@ -151,67 +147,9 @@ Confirm the expected output directory / artifact exists and is non-empty. Stop a
 
 ---
 
-## PHASE 5 — Provision Azure Resources
+## PHASE 5 — Deploy
 
-### 5.1  Create Resource Group (if not exists)
-```bash
-az group create --name "$RESOURCE_GROUP" --location "$REGION"
-```
-
-### 5.2  Create App Service Plan (if not exists)
-```bash
-az appservice plan create \
-  --name "${APP_NAME}-plan" \
-  --resource-group "$RESOURCE_GROUP" \
-  --sku "$SKU" \
-  --is-linux
-```
-Use `--is-linux` unless the user specifically requests Windows. Linux plans support all major runtimes and are cheaper.
-
-### 5.3  Create the Web App (if not exists)
-Choose the `--runtime` string based on detected framework. See [framework-reference.md](framework-reference.md) for the full runtime string map. Examples:
-- Node.js 20: `NODE|20-lts`
-- Python 3.12: `PYTHON|3.12`
-- .NET 8: `DOTNETCORE|8.0`
-- Java 21 (Tomcat): `TOMCAT|10.1-java21`
-
-```bash
-az webapp create \
-  --name "$APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --plan "${APP_NAME}-plan" \
-  --runtime "<RUNTIME_STRING>"
-```
-
-If the app name is already taken (Azure requires globally unique names), append a short random suffix and update `APP_NAME`.
-
-### 5.4  Configure App Settings
-Set essential environment variables:
-```bash
-az webapp config appsettings set \
-  --name "$APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --settings \
-    WEBSITE_RUN_FROM_PACKAGE=1 \
-    SCM_DO_BUILD_DURING_DEPLOYMENT=true \
-    NODE_ENV=production      # or FLASK_ENV=production, ASPNETCORE_ENVIRONMENT=Production, etc.
-```
-
-Ask the user: "Do you have any application environment variables (API keys, DB connection strings, etc.) that need to be set? If yes, list them now and I will add them via `az webapp config appsettings set` — never store secrets in code or files."
-
-### 5.5  Set startup command (if applicable)
-```bash
-az webapp config set \
-  --name "$APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --startup-file "startup.sh"   # or the gunicorn/uvicorn command directly
-```
-
----
-
-## PHASE 6 — Deploy
-
-### 6.1  Choose deployment method
+### 5.1  Choose deployment method
 Use **zip deploy** as the default (fast, reliable, works for all frameworks):
 ```bash
 # Create deployment zip (exclude .git, node_modules for Node.js, etc.)
@@ -234,7 +172,7 @@ For .NET, deploy the `./publish` folder instead:
 cd publish && zip -r ../deploy.zip . && cd ..
 ```
 
-### 6.2  Monitor deployment
+### 5.2  Monitor deployment
 ```bash
 az webapp log tail \
   --name "$APP_NAME" \
@@ -244,9 +182,9 @@ Stream logs for up to 60 seconds. Look for startup errors. If the app crashes on
 
 ---
 
-## PHASE 7 — Smoke Test & Summary
+## PHASE 6 — Smoke Test & Summary
 
-### 7.1  Get the app URL
+### 6.1  Get the app URL
 ```bash
 az webapp show \
   --name "$APP_NAME" \
@@ -255,10 +193,10 @@ az webapp show \
   --output tsv
 ```
 
-### 7.2  Smoke test
+### 6.2  Smoke test
 Run `curl -s -o /dev/null -w "%{http_code}" https://<defaultHostName>` — retry up to 5 times with 10-second waits (apps take ~30s to warm up). A `200` or `302` is success. Any `5xx` means the app failed to start — tail logs and diagnose.
 
-### 7.3  Summary report
+### 6.3  Summary report
 Print a deployment summary:
 ```
 ✅ Deployment complete!
@@ -266,8 +204,6 @@ Print a deployment summary:
 App:            <APP_NAME>
 URL:            https://<defaultHostName>
 Resource Group: <RESOURCE_GROUP>
-Region:         <REGION>
-Plan SKU:       <SKU>
 Framework:      <detected framework and version>
 Runtime:        <Azure runtime string>
 
@@ -277,7 +213,6 @@ Changes made to the codebase:
 Next steps:
   - Set up a custom domain: az webapp config hostname add ...
   - Enable HTTPS-only:      az webapp update --https-only true ...
-  - Configure autoscale:    az monitor autoscale create ...
   - Set up CI/CD:           az webapp deployment source config ...
 ```
 
