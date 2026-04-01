@@ -147,9 +147,36 @@ Confirm the expected output directory / artifact exists and is non-empty. Stop a
 
 ---
 
-## PHASE 5 — Deploy
+## PHASE 5 — Create Web App
 
-### 5.1  Choose deployment method
+### 5.1  Create the Web App (if not exists)
+Check whether the web app already exists:
+```bash
+az webapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --query name --output tsv 2>/dev/null
+```
+If it already exists, skip to Phase 6.
+
+Choose the `--runtime` string based on the framework detected in Phase 2. See [framework-reference.md](framework-reference.md) for the full runtime string map. Examples:
+- Node.js 20: `NODE|20-lts`
+- Python 3.12: `PYTHON|3.12`
+- .NET 8: `DOTNETCORE|8.0`
+- Java 21 (Tomcat): `TOMCAT|10.1-java21`
+
+```bash
+az webapp create \
+  --name "$APP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --plan "${APP_NAME}-plan" \
+  --runtime "<RUNTIME_STRING>"
+```
+
+If the app name is already taken globally, append a short random suffix (`$(cat /dev/urandom | tr -dc 'a-z0-9' | head -c6)`) and update `APP_NAME`.
+
+---
+
+## PHASE 6 — Deploy
+
+### 6.1  Choose deployment method
 Use **zip deploy** as the default (fast, reliable, works for all frameworks):
 ```bash
 # Create deployment zip (exclude .git, node_modules for Node.js, etc.)
@@ -172,7 +199,7 @@ For .NET, deploy the `./publish` folder instead:
 cd publish && zip -r ../deploy.zip . && cd ..
 ```
 
-### 5.2  Monitor deployment
+### 6.2  Monitor deployment
 ```bash
 az webapp log tail \
   --name "$APP_NAME" \
@@ -182,9 +209,9 @@ Stream logs for up to 60 seconds. Look for startup errors. If the app crashes on
 
 ---
 
-## PHASE 6 — Smoke Test & Summary
+## PHASE 7 — Smoke Test & Summary
 
-### 6.1  Get the app URL
+### 7.1  Get the app URL
 ```bash
 az webapp show \
   --name "$APP_NAME" \
@@ -193,10 +220,10 @@ az webapp show \
   --output tsv
 ```
 
-### 6.2  Smoke test
+### 7.2  Smoke test
 Run `curl -s -o /dev/null -w "%{http_code}" https://<defaultHostName>` — retry up to 5 times with 10-second waits (apps take ~30s to warm up). A `200` or `302` is success. Any `5xx` means the app failed to start — tail logs and diagnose.
 
-### 6.3  Summary report
+### 7.3  Summary report
 Print a deployment summary:
 ```
 ✅ Deployment complete!
